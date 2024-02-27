@@ -1,1 +1,7 @@
 ./build/
+*.exe
+*.lib
+*.exp
+*.pdf
+*.dll
+*.so
