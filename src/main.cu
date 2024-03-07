@@ -1,37 +1,43 @@
 #include <iostream>
 #include <fstream>
 #include <memory>
-#include <cuda_runtime.h>
-#include <thrust/host_vector.h>
-
-
-#include "smoothing_kernels.cuh"
-#include "force_kernels.cuh"
-#include "helper.cuh"
+#include <assert.h>
 
 #define DEBUG
+
+#include "helper.cuh"
+#include "class.cuh"
 
 #include "TimingCPU.h"
 #include "TimingGPU.cuh"
 
+typedef unsigned long long ULL;
+
 #define file_path "./data/init_setup.txt"
 
-
-// declearation of variables
-__device__ __managed__ unsigned m_N {},  m_N_rel{};
-__device__ __managed__ float m_mass {}, m_C_h {};
-thrust::device_vector<float> d_pos {};
-// calculate differnte versions of m_C_h
-// TODO: calculate differnte versions of m_C_h 
+cudaError_t checkCuda(cudaError_t);
 
 int main () {
-
-    TimingGPU timer_GPU;
-
+    
+    // declearation of variables
     std::shared_ptr<cudaDeviceProp> GPUprops {std::make_shared<cudaDeviceProp>()};
     gpu_info(GPUprops);
-
+    static const unsigned  blocks {80}, 
+    // static const unsigned  blocks {unsigned(GPUprops -> multiProcessorCount)}, 
+                    ThreadsPerBlock {unsigned(GPUprops -> maxThreadsPerBlock)};
     
+    TimingGPU timer_GPU;
+
+    unsigned  C_N {};
+    float     C_mass {}, C_h {};
+
+    // deleters for smart pointers
+    auto cuda_deleter_Tensors = [&] (Tensors<float>* ptr) {cudaFree(ptr);};
+    auto cuda_deleter_Rel_Force_Vector = [&] (Rel_Force_Vector<float>* ptr) {cudaFree(ptr);};
+
+    std::shared_ptr<Tensors<float>[]>           h_pos   {nullptr}, 
+                                                d_pos   {nullptr, cuda_deleter_Tensors};
+    std::shared_ptr<Rel_Force_Vector<float>[]>  d_f_vec {nullptr, cuda_deleter_Rel_Force_Vector};
 
     // get setup parameters
         std::ifstream file (file_path);
@@ -46,65 +52,94 @@ int main () {
         while (file >> line) {
 
             if (line == "mass") {
-                file >> m_mass;
+                file >> C_mass;
                 #ifdef DEBUG
-                    std::cout << "m_mass = " << m_mass << std::endl;
+                    std::cout << "C_mass = " << C_mass << std::endl;
                 #endif
                 continue;
             }
 
 
             if (line == "scope_length") {
-                file >> m_C_h;
+                file >> C_h;
                 #ifdef DEBUG
-                    std::cout << "m_C_h = " << m_C_h << std::endl;
+                    std::cout << "C_h = " << C_h << std::endl;
                 #endif
                 continue;
             }
 
             if (line == "position") {
-                file >> m_N;
+                file >> C_N;
                 #ifdef DEBUG
-                    std::cout << "m_N = " << m_N << std::endl;
+                    std::cout << "C_N = " << C_N << std::endl;
                 #endif
-                d_pos.reserve(m_N);
-                float temp {};
-                for (int i = 0; i < m_N; i++) {
-                    file >> temp;
-                    d_pos.push_back(temp);
+                h_pos = std::make_shared<Tensors<float>[]>(C_N);
+
+                for ( int i = 0; i < C_N; i++) {
+                    file >> h_pos[i].x >> h_pos[i].y >> h_pos[i].z;
                 }
+                
+                continue;
             }
 
         }
 
         // #ifdef DEBUG
-        //     std::copy(d_pos.begin(), d_pos.end(), std::ostream_iterator<float>(std::cout, " "));
-        //     std::cout << std::endl;
+        //     std::cout << "h_pos.size() = " << C_N << "\n";
+        //     for (int i = 0; i < C_N; i++) {
+        //         std::cout   << std::setprecision(6) << std::fixed
+        //                     << h_pos[i].x << "\t" 
+        //                     << h_pos[i].y << "\t" 
+        //                     << h_pos[i].z << std::endl;
+        //     }
         // #endif
 
         file.close();
     // end of parameters
 
-    // declearation of variables
-    m_N_rel = _rel_count(m_N);
-    thrust::device_vector<float>        d_rel_pos (m_N_rel * depth_rel_pos, 0.f),
-                                        d_density (m_N, 0.f);
-    thrust::device_vector<unsigned>     d_rel_idx (m_N_rel * depth_rel_idx, 0);
+    // define all sizes
+    static const ULL C_rel_N {_rel_count(C_N)},
+                     size_pos {C_N * sizeof(Tensors<float>)},
+                     size_f_vec {C_rel_N * sizeof(Rel_Force_Vector<float>)};
+    printf("C_rel_N = %lld\n", C_rel_N);
+    printf("Total size of Position Vector = %lld Bits = %lld bytes\n", size_pos, size_pos/8);
+    printf("Total size of Force Vector = %lld Bits = %lld bytes\n", size_f_vec, size_f_vec/8);
 
-    const dim3 blocks       {_get_block_size  (m_N, GPUprops)};
-    const unsigned thread   {_get_thread_size (m_N, GPUprops)};
+    // TODO: calculate differnte versions of C_h 
+    static const float  C_h2    {float(std::pow(C_h, 2))}, 
+                        C_1_h6  {float(1 / std::pow(C_h, 6))}, 
+                        C_1_h9  {float(1 / std::pow(C_h, 9))};
     
-    printf ("Blocks = {%d, %d, %d}\nThreads = %d\n", blocks.x, blocks.y, blocks.z, thread);
+    timer_GPU.StartCounter();
+    // allocate device memory for d_pos
+    checkCuda(cudaMalloc((void **)&d_pos, size_pos));
+    // copy positions: host -> device memory 
+    checkCuda(cudaMemcpy(d_pos.get(), h_pos.get(), size_pos, cudaMemcpyHostToDevice));
+    // allocate device memory for d_f_vec
+    checkCuda(cudaMalloc((void **)&d_f_vec, size_f_vec));
+    std::cout << "Allocation and Copy Time = " << timer_GPU.GetCounter() << " ms" << std::endl;
+
 
     timer_GPU.StartCounter();
-        cal_rel_idx <<<blocks,thread>>> (raw_pointer_cast(&d_rel_idx[0]), m_N);
-    std::cout << "GPU Timing for cal_rel_idx = " << timer_GPU.GetCounter() << " ms for " << m_N << " elements" << std::endl;
+    cal_rel_coords <<<blocks, ThreadsPerBlock>>> (
+        d_f_vec.get(), 
+        d_pos.get(), 
+        C_h, C_h2, C_1_h6, C_1_h9, C_rel_N
+    );
+    cudaDeviceSynchronize();
+    std::cout << "cal_rel_coords <<<"
+              << blocks << ", " << ThreadsPerBlock
+              << ">>> Time = " << timer_GPU.GetCounter() << " ms" 
+              << std::endl;
 
-    // #ifdef DEBUG
-    //     std::copy(d_rel_idx.begin(), d_rel_idx.end(), std::ostream_iterator<unsigned>(std::cout, " "));
-    //     std::cout << std::endl;
-    // #endif
 
+}
 
-
+inline cudaError_t checkCuda(cudaError_t result)
+{
+  if (result != cudaSuccess) {
+    fprintf(stderr, "CUDA Runtime Error: %s\n", cudaGetErrorString(result));
+    assert(result == cudaSuccess);
+  }
+  return result;
 }

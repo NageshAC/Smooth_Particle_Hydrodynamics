@@ -2,13 +2,13 @@
 #include <iostream>
 #include <iomanip>
 
-#define X_Step 4
-#define Y_Step 4
-#define Z_Step 4
+#define X_Step 8
+#define Y_Step 8
+#define Z_Step 8
 
-#define X_Step_length 0.01
-#define Y_Step_length 0.01
-#define Z_Step_length 0.01
+#define X_Step_length 1
+#define Y_Step_length 1
+#define Z_Step_length 1
 
 
 #define Mass 0.5

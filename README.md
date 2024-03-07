@@ -37,7 +37,8 @@ $$ W_{poly6}(r,h) = \frac{315}{64\pi h^9} \begin{cases}
 $$ \nabla W_{poly6}(r,h) = \frac{945}{32\pi h^9} \begin{cases}
       r(h^2-r^2)^2 & 0 \le r \le h\\
       0 & \text{otherwise}
-    \end{cases}    \tag{20}  $$This is used in all but two cases. 
+    \end{cases}    \tag{20}  $$
+This is used in all but two cases. 
 If this kernel is used for the computation of the pressure forces, particles tend to build clusters under high pressure. As particles get very close to each other, the repulsion force vanishes because the gradient of the kernel approaches zero at the center. Desbrun solves this problem by using a spiky kernel with a non vanishing gradient near the center. For pressure computations, Debrun’s spiky kernel 
 $$ W_{spiky}(r,h) = \frac{15}{\pi h^6} \begin{cases}
       (h-r)^3 & 0 \le r \le h\\
@@ -46,9 +47,14 @@ $$ W_{spiky}(r,h) = \frac{15}{\pi h^6} \begin{cases}
 $$ \nabla W_{spiky}(r,h) = \frac{45}{\pi h^6} \begin{cases}
       (h-r)^2 & 0 \le r \le h\\
       0 & \text{otherwise}
-    \end{cases}    \tag{22}  $$generates the necessary repulsion forces. At the boundary where it vanishes it also has zero first and second derivatives.
+    \end{cases}    \tag{22}  $$
+generates the necessary repulsion forces. At the boundary where it vanishes it also has zero first and second derivatives.
 Viscosity is a phenomenon that is caused by friction and, thus, decreases the fluid’s kinetic energy by converting it into heat. Therefore, viscosity should only have a smoothing effect on the velocity field. However, if a standard kernel is used for viscosity, the resulting viscosity forces do not always have this property. For two particles that get close to each other, the Laplacian of the smoothed velocity field (on which viscosity forces depend) can get negative resulting in forces that increase their relative velocity. The artifact appears in coarsely sampled velocity fields. In real-time applications where the number of particles is relatively low, this effect can cause stability problems. For the computation of viscosity forces, a third kernel: 
 $$ W_{viscosity}(r,h) = \frac{15}{2\pi h^3} \begin{cases}
       -\frac{r^3}{2h^3}+\frac{r^2}{h^2}+\frac{h}{2r}-1 & 0 \le r \le h \\
       0 & \text{otherwise}
-\end{cases}    \tag{23}  $$ whose Laplacian, $$ \nabla^2W(r,h) = \frac{45}{\pi h^6} (h-r) \tag{24} $$ is positive everywhere with the following additional properties: $$ W(||r||=h, h) = \nabla W(||r||=h, h) = 0 $$ The use of this kernel for viscosity computations increased the stability of the simulation significantly allowing to omit any kind of additional damping.
+\end{cases}    \tag{23}  $$ whose Laplacian, $$ \nabla^2W(r,h) = \frac{45}{\pi h^6} (h-r) \tag{24} $$ 
+is positive everywhere with the following additional properties: 
+$$ W(||r||=h, h) = \nabla W(||r||=h, h) = 0 $$ 
+The use of this kernel for viscosity computations increased the stability of the simulation significantly allowing to omit any kind of additional damping.
+

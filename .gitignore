@@ -1,7 +1,10 @@
 ./build/
+./output/
 *.exe
 *.lib
 *.exp
 *.pdf
 *.dll
 *.so
+*.nsys-rep
+*.sqlite
